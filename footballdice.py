@@ -2,6 +2,7 @@ from utils import roll_1_d6
 from UserPlayer import UserPlayer
 
 class GameState:
+    # game data 
     def __init__(self, offense=0, possesions=3):
         # In each list the first element is related to player 1 while 
         #   the second is for player 2
@@ -29,7 +30,7 @@ class GameState:
         # yards to touchdown
         self.yttd = 75 
 
-        # TODO: add probability board here
+        # TODO: add probability board somewhere here
         
     def display_state(self):
         # TODO: impliment a way to display all game state info to user nicely
@@ -37,13 +38,14 @@ class GameState:
         print(f'P1 {self.scores[0]} : P2 {self.scores[1]}')
         print(f'Player {self.offense+1} on offense, {self.drives_remaining} drives left')
         
-
 class FootballDice:
+    # game manager
     def __init__(self, player1, player2, possessions=3):
         self.p1 = player1
         self.p2 = player2
         
         self.setup_game(possessions)
+        self.play_game()
 
     def setup_game(self, possessions):
         # Initialize the game state and determine who plays first
@@ -65,11 +67,40 @@ class FootballDice:
             elif p1Roll > p2Roll:
                 print(f"{self.p1} will start on offense!")
                 self.state = GameState(0, possessions)
+                self.offense = self.p1
+                self.defense = self.p2
             else:
                 print(f"{self.p2} will start on offense!")
                 self.state = GameState(1, possessions)
+                self.offense = self.p2
+                self.defense = self.p1
 
         self.state.display_state()
+
+    def play_game(self):
+        
+        # determine offense possible actions
+        off_op = self.offense.determine_plays(self.state)
+        def_op = self.defense.determine_plays(self.state)
+        print(off_op)
+        print(def_op)
+        # determine defense possible actions
+        # get offensve action 
+        # get defensive action (will they blitz?)
+        # run play
+        # evaluate results
+            # did the play result in score?
+                # resolve score
+                # change possesion
+            # does either player want to use a TO to rerun the play?
+            # was it 4th down?
+                # change possession
+            # advance down counter?
+                # advance to next turn
+        
+
+    def change_possesion(self):
+        pass
 
             
 
