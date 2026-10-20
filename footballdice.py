@@ -3,6 +3,8 @@ from UserPlayer import UserPlayer
 
 class GameState:
     # game data 
+    OFFENSE = 0
+    DEFENSE = 1
     def __init__(self, offense=0, possesions=3):
         # In each list the first element is related to player 1 while 
         #   the second is for player 2
@@ -29,6 +31,9 @@ class GameState:
         #   will do 99-yttd if possession flips
         # yards to touchdown
         self.yttd = 75 
+
+        self.offense_plays = []
+        self.defense_plays = []
 
         # TODO: add probability board somewhere here
         
@@ -77,14 +82,37 @@ class FootballDice:
 
         self.state.display_state()
 
+
+    def determine_off_plays(self):
+        # determine offensive actions for the given game state
+        actions = ["2d", "3d", "pt"]
+        if self.state.audibles[self.offense.role] > 0:
+            actions.append("ad")
+        if self.state.yttd <= 5:
+            actions.append("1d")
+        if self.state.yttd < 47:
+            actions.append("fg")
+
+        return actions
+
+    def determine_def_plays(self):
+        # determine defensive actions for the given game state
+        actions = []
+        if self.state.audibles[self.defense.role] > 0:
+            actions.append("ad")
+        if self.state.blitzes[self.defense.role] > 0:
+            actions.append("bz")
+            
+        return actions
+    
     def play_game(self):
         
         # determine offense possible actions
-        off_op = self.offense.determine_plays(self.state)
-        def_op = self.defense.determine_plays(self.state)
-        print(off_op)
-        print(def_op)
+        self.state.offense_plays = self.determine_off_plays()
         # determine defense possible actions
+        self.state.defense_plays = self.determine_def_plays()
+        print(self.state.offense_plays)
+        print(self.state.defense_plays)
         # get offensve action 
         # get defensive action (will they blitz?)
         # run play
