@@ -17,10 +17,7 @@ class Player:
         return actions
 
 
-    def call_off_play(self, state):
-        raise NotImplementedError
-    
-    def call_def_play(self, state):
+    def call_play(self, state):
         raise NotImplementedError
     
     
@@ -32,18 +29,22 @@ class UserPlayer(Player):
     def __init__(self, name="Human", role=0):
         super().__init__(name=name, role=role)
 
-    def call_off_play(self, state):
-        raise NotImplementedError
-    
-    def call_def_play(self, state):
-        raise NotImplementedError
+    def call_play(self, state):
+        ops = len(state.offense_plays) if state.offense == self.role else len(state.defense_plays)
+        valid = False
+        while(not valid):
+            try:
+                val = abs(int(input("Choice: ").strip().split()[0]))
+                if val > ops or val == 0:
+                    print(f"Invalid input {val}, try again")
+                else: valid = True
+            except:
+                print("Invalid input, try again")
+        return val
 
 class AgentPlayer(Player):
     def __init__(self, name="Agent", role=1):
         super().__init__(name=name, role=role)
 
-    def call_off_play(self, state):
-        raise NotImplementedError
-    
-    def call_def_play(self, state):
+    def call_play(self, state):
         raise NotImplementedError
