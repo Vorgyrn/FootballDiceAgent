@@ -17,6 +17,8 @@ class ResultsGrid:
         self.punt = pd.read_csv(punt).rename(columns=int)
         self.punt.index += 1
 
+        self.useTempGrid = False
+
     # play result functions
     def getPlayResult(self, roll:list):
         # determines the result of an offensive play
@@ -96,6 +98,9 @@ class ResultsGrid:
         # return:           True if successfull, False otherwise
         d1 = roll[0]
         return (d1 % 2) == 0
+
+    def setTempValue(self, row,col,val):
+        self.useTempGrid = True
         
 
 if __name__ == "__main__":
