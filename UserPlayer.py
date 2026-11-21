@@ -1,4 +1,4 @@
-
+import sys
 class Player:
     score=0
     def __init__(self, name="Human", role=None):
@@ -7,7 +7,7 @@ class Player:
         self.role = role
 
     def call_play(self, state):
-        # determine offensive actions for the given game state
+        # determine actions for the given game state
         actions = []
         if self.role == state.offense:
             actions = self.call_off_play(state)
@@ -15,11 +15,6 @@ class Player:
             actions = self.call_def_play(state)
             
         return actions
-
-
-    def call_play(self, state):
-        raise NotImplementedError
-    
     
     def __repr__(self):
         return f"{self.name}"
@@ -38,6 +33,8 @@ class UserPlayer(Player):
                 if val > ops or val == 0:
                     print(f"Invalid input {val}, try again")
                 else: valid = True
+            except KeyboardInterrupt:
+                sys.exit(1)
             except:
                 print("Invalid input, try again")
         return val

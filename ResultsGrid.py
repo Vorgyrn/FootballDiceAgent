@@ -71,7 +71,10 @@ class ResultsGrid:
         return self.plays.at[d1, d2+d3]
     
     def getPuntResult(self, roll:list):
-        return 0
+        # consult punt result grid for result of the punt
+        # input: roll   a list with dice roll results (1 or 2 dice)
+        # output:       distance the punt went, 0 - 65 yards
+        return self.punt.at[1, sum(roll)]
     
     def getFieldGoalResult(self, roll:list, dist:int):
         # determine if the field goal attempt was succesful 
@@ -108,6 +111,7 @@ if __name__ == "__main__":
 
     print(resGrid.getFieldGoalResult([1,2], 43))
     print(resGrid.getPlayResult([6,5,4]))
+    print(resGrid.getPuntResult([2, 6]))
     
     
     
