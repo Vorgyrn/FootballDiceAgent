@@ -8,13 +8,13 @@ import pandas as pd
 default_x = {"X1":13, "X2":-5, "X3":0 }
 class ResultsGrid:
     def __init__(self, plays="grids/plays.csv", field_goals="grids/field_goals.csv", punt="grids/punt.csv", xvals=default_x):
-        self.plays = pd.read_csv(plays).replace(xvals).rename(columns=int)
+        self.plays = pd.read_csv(plays).replace(xvals).rename(columns=int).astype(int)
         self.plays.index += 1
         
-        self.field_goals = pd.read_csv(field_goals).rename(columns=int)
+        self.field_goals = pd.read_csv(field_goals).rename(columns=int).astype(int)
         self.field_goals.index += 1
         
-        self.punt = pd.read_csv(punt).rename(columns=int)
+        self.punt = pd.read_csv(punt).rename(columns=int).astype(int)
         self.punt.index += 1
 
         self.useTempGrid = False

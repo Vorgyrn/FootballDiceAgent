@@ -8,13 +8,7 @@ class Player:
 
     def call_play(self, state):
         # determine actions for the given game state
-        actions = []
-        if self.role == state.offense:
-            actions = self.call_off_play(state)
-        else: 
-            actions = self.call_def_play(state)
-            
-        return actions
+        raise NotImplementedError
     
     def __repr__(self):
         return f"{self.name}"
@@ -37,7 +31,9 @@ class UserPlayer(Player):
                 sys.exit(1)
             except:
                 print("Invalid input, try again")
-        return val
+
+        print('')
+        return val-1
 
 class AgentPlayer(Player):
     def __init__(self, name="Agent", role=1):

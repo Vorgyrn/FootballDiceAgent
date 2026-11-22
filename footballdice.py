@@ -70,6 +70,7 @@ class FootballDice:
         self.playResults = ResultsGrid()
         
         self.setup_game(possessions)
+        print('\n')
         self.play_game()
 
     def setup_game(self, possessions):
@@ -105,12 +106,12 @@ class FootballDice:
     def determine_off_plays(self):
         # determine offensive actions for the given game state
         actions = ["Roll 2 dice", "Roll 3 dice", "Punt"]
-        if self.state.audibles[self.offense.role] > 0:
-            actions.append("Audible")
         if self.state.yttd <= 5:
             actions.append("Roll 1 dice (special scoring action)")
         if self.state.yttd < 47:
             actions.append("Attempt field goal (special scoring action)")
+        if self.state.audibles[self.offense.role] > 0:
+            actions.append("Audible")
 
         return actions
 
@@ -125,7 +126,9 @@ class FootballDice:
         return actions
     
     def play_game(self):
-        while self.state.drives_remaining > 0:
+        while (self.state.drives_remaining > 0) or \
+                (self.state.scores[0] == self.state.scores[1]):
+            
             # determine offense possible actions
             self.state.offense_plays = self.determine_off_plays()
             # determine defense possible actions
@@ -135,40 +138,44 @@ class FootballDice:
             off_play = self.off_call_play()
             # get defensive action (will they blitz?)
             def_play = self.def_call_play()
+
             # TODO: CHANGE GRID STATES BASED ON DEFENSIVE ACTION pre dice roll
-            print(self.state.offense_plays, off_play)
+
             # resolve offense special actions
             if off_play in self.PRE_PLAY_ACTIONS_OFF: 
                 self.resolve_pre_play_actions(off_play)
             self.play_down(off_play)
+            
+            print('\n')
+            print(f'Score:')
+            print(f'{self.p1}: {self.state.scores[0]}')
+            print(f'{self.p2}: {self.state.scores[1]}')
+
+        print(f'Final Score:')
+        print(f'{self.p1}: {self.state.scores[0]}')
+        print(f'{self.p2}: {self.state.scores[1]}')
+        winner = self.state.scores.index(max(self.state.scores))
+        print_green(f'\nWINNER: {self.p1 if winner else self.p2}: {self.state.scores[winner]}')
         
-        # run play
-        # evaluate results
-            # did the play result in score?
-                # resolve score
-                # change possesion
-            # does either player want to use a TO to rerun the play?
-            # was it 4th down?
-                # change possession
-            # advance down counter?
-                # advance to next turn
         
     def off_call_play(self):
+        # prompt offense for play call
         print(f"Select Offensive play for {self.offense.name}")
         i = 1
         for play in self.state.offense_plays:
             print(f'\t{i}. {play}')
             i += 1
-        val = self.offense.call_play(self.state)-1
-        return  self.state.offense_plays[val]
+        val = self.offense.call_play(self.state)
+        return self.state.offense_plays[val]
 
     def def_call_play(self):
+        # prompt defense for play call
         print(f"Select Defensive play for {self.defense.name}")
         i = 1
         for play in self.state.defense_plays:
             print(f'\t{i}. {play}')
             i += 1
-        val = self.defense.call_play(self.state)-1
+        val = self.defense.call_play(self.state)
         return  self.state.defense_plays[val]
 
     # core game functions
@@ -218,7 +225,7 @@ class FootballDice:
             
         self.evaluate_play(play, res)
 
-    def evaluate_play(self, play, res):
+    def evaluate_play(self, play:str, res:int):
         if "Roll" in play:
             if res == -100:
                 # the play resulted in a turn over
@@ -238,7 +245,7 @@ class FootballDice:
                 # check for turn over on downs
                 if self.state.down == 4 and ((self.state.ytfd-res) > 0): 
                     print_red(f'{self.offense} turned over the ball on downs!')
-                    self.change_possesion(100-res-self.state.yttd)
+                    self.change_possesion(100-(self.state.yttd+res))
                 elif (self.state.ytfd-res) <= 0:
                     # the team got a first down
                     self.state.down = 1
@@ -263,7 +270,7 @@ class FootballDice:
             if res == 0: print('Blocked punt!')
             elif new_pos <= 1:
                 # punt went into endzone
-                print(f'Touch back!')
+                print(f'The punt went for {res} and into the endzone, touch back!')
                 new_pos=25 
             else: print(f'{self.offense} punted the ball {res} yards')
             
@@ -286,4 +293,4 @@ class FootballDice:
 if __name__ == "__main__":
      p1 = UserPlayer("Brad", 0)
      p2 = UserPlayer("Sav", 1)
-     game = FootballDice(p1, p2)
+     game = FootballDice(p1, p2, possessions=1)
