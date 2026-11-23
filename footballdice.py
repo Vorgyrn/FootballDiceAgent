@@ -2,6 +2,8 @@ from utils import *
 from UserPlayer import UserPlayer
 from ResultsGrid import ResultsGrid
 
+import copy
+
 class GameState:
     # game data 
     OFFENSE = 0
@@ -38,7 +40,7 @@ class GameState:
         self.defense_plays = []
 
         
-    def change_possession(self, new_pos:int):
+    def change_possesion(self, new_pos:int):
         # change game state to swap offense and defense roles
         # input: new_pos    new ball spot [1,99]
         self.drives_remaining -= 1
@@ -53,12 +55,24 @@ class GameState:
     def display_state(self):
         # TODO: impliment a way to display all game state info to user nicely
         # (includeing printing the field to screen)
-        print(f'P1 {self.scores[0]} : P2 {self.scores[1]}')
-        print(f'Player {self.offense+1} on offense, {self.drives_remaining} drives left')
+        
+        print(f'Score    | {self.scores[0]} | {self.scores[1]} |')
+        print(f'TOs      | {self.time_outs[0]} | {self.time_outs[1]} |')
+        print(f'Audibles | {self.audibles[0]} | {self.audibles[1]} |')
+        print(f'Blitzes  | {self.blitzes[0]} | {self.blitzes[1]} |')
+        print(f'Drives Remaining: {self.drives_remaining}')
+
+        if self.down == 4: print_red(f'DOWN: {self.down}')
+        else: print_blue(f'DOWN: {self.down}')
+        print_blue(f'Yards to First Down: {self.ytfd}')
+        print_blue(f'Yards to End Zone: {self.yttd}')
 
     def isWinning(self, player):
         # check if a player is winning or not, 0 check player 1, 1 check player2
         return player == self.scores.index(max(self.scores))
+
+    def getOffTimeouts(self):
+        return self.time_outs[self.offense]
         
 class FootballDice:
     # game manager
@@ -70,11 +84,8 @@ class FootballDice:
     def __init__(self, player1, player2, possessions=3):
         self.p1 = player1
         self.p2 = player2
-
         self.playResults = ResultsGrid()
-        
         self.setup_game(possessions)
-        print('\n')
         self.play_game()
 
     def setup_game(self, possessions):
@@ -104,9 +115,15 @@ class FootballDice:
                 self.offense = self.p2
                 self.defense = self.p1
 
+        self.display_state()
+
+    def display_state(self):
+        print('')
+        print(f'Player | {self.p1} | {self.p2} |')
         self.state.display_state()
-
-
+        print(f'Player {self.offense} on offense')
+        print('')
+        
     def determine_off_plays(self):
         # determine offensive actions for the given game state
         actions = ["Roll 2 dice", "Roll 3 dice"]
@@ -136,14 +153,12 @@ class FootballDice:
         while (self.state.drives_remaining > 0) or \
                 (self.state.scores[0] == self.state.scores[1]):
             
-            # determine offense possible actions
+            # determine possible actions for both players
             self.state.offense_plays = self.determine_off_plays()
-            # determine defense possible actions
             self.state.defense_plays = self.determine_def_plays()
             
-            # get offensve action 
+            # get actions from players
             off_play = self.off_call_play()
-            # get defensive action (will they blitz?)
             # def_play = self.def_call_play()
 
             # TODO: CHANGE GRID STATES BASED ON DEFENSIVE ACTION pre dice roll
@@ -153,12 +168,8 @@ class FootballDice:
                 self.resolve_pre_play_actions(off_play)
             self.play_down(off_play)
 
-            print('')
-            print(f'Score:')
-            print(f'{self.p1}: {self.state.scores[0]}')
-            print(f'{self.p2}: {self.state.scores[1]}')
-            #print_blue(f'{self.offense} on offense')
-            print('')
+            
+            self.display_state()
 
         print(f'Final Score:')
         print(f'{self.p1}: {self.state.scores[0]}')
@@ -188,55 +199,61 @@ class FootballDice:
         return  self.state.defense_plays[val]
 
     # core game functions
-    def change_possesion(self, new_pos:int):
-        # change game state to swap offense and defense roles
-        # input: new_pos    new ball spot [1,99]
-        self.state.change_possession(new_pos)
-        if self.state.offense == 1: 
-            self.offense = self.p2
-            self.defense = self.p1
-        else: 
-            self.offense = self.p1
-            self.defense = self.p2
-        print(f"{self.offense} is now on offense at the {self.state.yttd}!")
-        print(f"1st and {self.state.ytfd}!")
-            
+           
     def resolve_pre_play_actions(self, play):
         pass
     
     def play_down(self, play):
         res = None
+        attempt = True
         print_yellow(f'{self.offense} is running {play}')
-        roll = roll_3_d6()
         
-        if play == "Roll 1 dice (special scoring action)":
-            roll = roll[:1]
-            print(f'Offense rolled {roll}')
-            res = self.playResults.getPlayResult(roll)
+        while(attempt):
+            attempt = False
+            roll = roll_3_d6()
             
-        elif play =='Roll 2 dice':
-            roll = roll[:2]
-            print(f'Offense rolled {roll}')
-            res = self.playResults.getPlayResult(roll)
-            
-        elif play == 'Roll 3 dice':
-            print(f'Offense rolled {roll}')
-            res = self.playResults.getPlayResult(roll)
-            
-        elif play == "Attempt field goal (special scoring action)":
-            roll = roll[:1]
-            print(f'Offense rolled {roll}!')
-            res = self.playResults.getFieldGoalResult(roll, self.state.yttd)
-        elif "Punt" in play:
-            if "Short" in play: roll = roll[:1]
-            else: roll = roll[:2]
-            
-            print(f'Offense rolled {roll}!')
-            res = self.playResults.getPuntResult(roll)
-            
+            if play == "Roll 1 dice (special scoring action)":
+                roll = roll[:1]
+                print(f'Offense rolled {roll}')
+                res = self.playResults.getPlayResult(roll)
+                print_yellow(f'')
+                
+            elif play =='Roll 2 dice':
+                roll = roll[:2]
+                print(f'Offense rolled {roll}')
+                res = self.playResults.getPlayResult(roll)
+                
+            elif play == 'Roll 3 dice':
+                print(f'Offense rolled {roll}')
+                res = self.playResults.getPlayResult(roll)
+                
+            elif play == "Attempt field goal (special scoring action)":
+                roll = roll[:1]
+                print(f'Offense rolled {roll}!')
+                res = self.playResults.getFieldGoalResult(roll, self.state.yttd)
+            elif "Punt" in play:
+                if "Short" in play: roll = roll[:1]
+                else: roll = roll[:2]
+                
+                print(f'Offense rolled {roll}!')
+                res = self.playResults.getPuntResult(roll)
+
+            # give option to use TO if available on negative plays 
+            #   or 3rd and 4th down, dont redo punts
+            if self.state.getOffTimeouts() and \
+                (res-self.state.ytfd < 0) and   \
+                (res < 0 or self.state.down > 2) \
+                and "Roll" in play:
+                self.display_state()
+                if self.offense.call_time_out(self.state, res) == "yes": 
+                    attempt = True
+                    self.state.time_outs[self.state.offense] -=1
+                    print_yellow(f'{self.offense} is replaying the down using a timeout')
+        
         self.evaluate_play(play, res)
 
     def evaluate_play(self, play:str, res:int):
+        # returns a game state object that has the result of the play
         if "Roll" in play:
             if res == -100:
                 # the play resulted in a turn over
@@ -272,12 +289,6 @@ class FootballDice:
                     self.state.yttd -= res
                     self.state.ytfd -= res
                 
-                print('')
-                if self.state.down == 4: print_red(f'DOWN: {self.state.down}')
-                else: print_blue(f'DOWN: {self.state.down}')
-                print_blue(f'Yards to First Down: {self.state.ytfd}')
-                print_blue(f'Yards to End Zone: {self.state.yttd}')
-                
         elif "Punt" in play:
             # calculate new position of ball after punt
             new_pos = self.state.yttd - res
@@ -296,12 +307,11 @@ class FootballDice:
                 # fg good, add 3 points and do kickoff
                 print_green("Field Goal attempt is good!")
                 self.state.scores[self.state.offense] += 3
-                # TODO: create function to do a kickoff
                 self.doKickoff()
             else: 
                 # fg no good, def gets ball at current position
                 print_red("Field Goal attempt is no good!")
-                self.change_possesion(100-self.state.yttd)            
+                self.change_possesion(100-self.state.yttd)           
             
     def doKickoff(self):
         print_green("Kicking from the 50")
@@ -350,7 +360,8 @@ class FootballDice:
             if res == -100:
                 # the play resulted in a turn over
                 print_red(f'{self.defense} turned over the ball!')
-                self.change_possesion(100-start)
+                self.state.yttd = start
+                self.state.ytfd = 10 if self.state.yttd > 10 else self.state.yttd
             elif res == 100:
                 # the play resulted in a touchdown
                 print_green(f'{self.defense} scored a touchdown!')
@@ -367,9 +378,8 @@ class FootballDice:
             
         elif "Don't" in play:
             print(f"{self.defense} is calling a fair catch")
-            self.state.change_possession(start)
+            self.change_possesion(start)
             
-
     def onsideKick(self):
         # roll 3 dice and must get the following results
         # d1 = 1,2,3
@@ -378,7 +388,19 @@ class FootballDice:
         roll = roll_3_d6()
         print_yellow(f"{self.offense} rolled {roll}")
         return (roll[0] < 4) and  (roll[1] > 4) and  (roll[2] > 4)
-        
+    
+    def change_possesion(self, new_pos:int):
+        # change game state to swap offense and defense roles
+        # input: new_pos    new ball spot [1,99]
+        self.state.change_possesion(new_pos)
+        if self.state.offense == 1: 
+            self.offense = self.p2
+            self.defense = self.p1
+        else: 
+            self.offense = self.p1
+            self.defense = self.p2
+        print(f"{self.offense} is now on offense at the {self.state.yttd}, 1st and {self.state.ytfd}!")
+            
 if __name__ == "__main__":
      p1 = UserPlayer("Brad", 0)
      p2 = UserPlayer("Sav", 1)

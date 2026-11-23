@@ -1,3 +1,5 @@
+from utils import *
+
 import sys
 class Player:
     score=0
@@ -9,7 +11,16 @@ class Player:
     def call_play(self, state):
         # determine actions for the given game state
         raise NotImplementedError
-    
+
+    def call_time_out(self, state):
+        # determine actions for the given game state
+        raise NotImplementedError
+    def call_audible(self, state):
+        # determine actions for the given game state
+        raise NotImplementedError
+    def call_blitz(self, state):
+        # determine actions for the given game state
+        raise NotImplementedError
     def __repr__(self):
         return f"{self.name}"
 
@@ -20,20 +31,28 @@ class UserPlayer(Player):
 
     def call_play(self, state):
         ops = len(state.offense_plays) if state.offense == self.role else len(state.defense_plays)
-        valid = False
-        while(not valid):
-            try:
-                val = abs(int(input("Choice: ").strip().split()[0]))
-                if val > ops or val == 0:
-                    print(f"Invalid input {val}, try again")
-                else: valid = True
-            except KeyboardInterrupt:
-                sys.exit(1)
-            except:
-                print("Invalid input, try again")
+        return validate_input(ops)
 
-        print('')
-        return val-1
+    def call_time_out(self, state, yards=0):
+        # determine actions for the given game state
+        ops = ["yes", "no"]
+        if yards == -100: yards = "turnover"
+        print_red(f'{self.name} last play resulted in {yards}')
+        print(f"Take a timout to redo play?")
+        i = 1
+        for play in ops:
+            print(f'\t{i}. {play}')
+            i += 1
+
+        return ops[validate_input(len(ops))]
+    
+    def call_audible(self, state):
+        # determine actions for the given game state
+        raise NotImplementedError
+    
+    def call_blitz(self, state):
+        # determine actions for the given game state
+        raise NotImplementedError
 
 class AgentPlayer(Player):
     def __init__(self, name="Agent", role=1):
