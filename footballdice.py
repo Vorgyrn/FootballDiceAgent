@@ -41,8 +41,7 @@ class GameState:
         self.off_play_call = ""
         self.def_play_call = ""
 
-        self.off_aud = None
-        self.def_aud = None
+        self.aud_row = None
         self.def_blitz = None
 
         
@@ -87,13 +86,13 @@ class GameState:
         self.off_play_call = ""
         self.def_play_call = ""
 
-        self.off_aud = None
-        self.def_aud = None
+        self.aud_row = None
         self.def_blitz = None
 class FootballDice:
     # game manager
     PRE_PLAY_ACTIONS_OFF = ['Audible']
-    PLAYS_OFF = ["Roll 1 dice (special scoring action)", 'Roll 2 dice', 'Roll 3 dice', "Attempt field goal (special scoring action)", 'Short Punt (1 dice)', 'Long Punt (2 dice)']
+    OFF_BASE_PLAYS = ["Roll 2 dice", "Roll 3 dice"]
+    PLAYS_OFF = OFF_BASE_PLAYS + ["Roll 1 dice (special scoring action)", "Attempt field goal (special scoring action)", 'Short Punt (1 dice)', 'Long Punt (2 dice)']
     ALL_OFF_ACTIONS = PLAYS_OFF + PRE_PLAY_ACTIONS_OFF
     ALL_DEF_ACTIONS = ['None', 'Audible', 'Dice Change Blitz', 'Cross Out Blitz']
     
@@ -142,7 +141,7 @@ class FootballDice:
         
     def determine_off_plays(self):
         # determine offensive actions for the given game state
-        actions = ["Roll 2 dice", "Roll 3 dice"]
+        actions = copy.deepcopy(self.OFF_BASE_PLAYS)
         if self.state.yttd <= 5:
             actions.append("Roll 1 dice (special scoring action)")
         if self.state.yttd < 47:
@@ -179,6 +178,7 @@ class FootballDice:
             # off play call and resolution
             self.determine_off_plays()
             self.off_call_play()
+            self.resolve_off_pre_play_actions()
 
             # run play and update game state
             self.play_down()         
@@ -222,11 +222,11 @@ class FootballDice:
         # all defensive actions are pre play so anything other than none requires handling
         if dp == "Audible":
             # set game state varaible to set def blitz row (replace first dice roll in offense play)
-            self.state.def_aud = self.defense.call_audible(self.state)
+            self.state.aud_row = self.defense.call_audible(self.state)
             self.state.audibles[self.defense.role] -= 1
-            print_yellow(f"Defense is forcing play results to row {self.state.def_aud}")
+            print_yellow(f"Defense is forcing play results to row {self.state.aud_row}")
             print("Options:")
-            print(self.playResults.getPlayRow(self.state.def_aud).to_list())
+            print(self.playResults.getPlayRow(self.state.aud_row).to_list())
             
         elif dp == 'Dice Change Blitz':
 
@@ -237,12 +237,19 @@ class FootballDice:
             self.state.blitzes[self.offense.role] -= 1
 
     def resolve_off_pre_play_actions(self):
+        # only pre play action for offense is audible
         if self.state.off_play_call in self.PRE_PLAY_ACTIONS_OFF:
-
+            self.state.aud_row = self.offense.call_audible(self.state)
             self.state.audibles[self.offense.role] -= 1
+            print_yellow(f"Offense is forcing play results to row {self.state.aud_row}")
+            print("Options:")
+            print(self.playResults.getPlayRow(self.state.aud_row).to_list())
+            
             # call actual play
+            print( self.OFF_BASE_PLAYS)
+            self.state.offense_plays = self.OFF_BASE_PLAYS
+            print(self.state.offense_plays)
             self.off_call_play() 
-            # only pre play action for offense is audible
         
     def play_down(self):
         play = self.state.off_play_call
@@ -254,8 +261,8 @@ class FootballDice:
             attempt = False
             roll = roll_3_d6()
 
-            if self.state.def_aud is not None: 
-                roll[0] = self.state.def_aud
+            if self.state.aud_row is not None: 
+                roll[0] = self.state.aud_row
             
             if play == "Roll 1 dice (special scoring action)":
                 roll = roll[:1]
@@ -292,7 +299,7 @@ class FootballDice:
                 self.display_state()
                 p = res
                 if res == -100: p = "turnover"
-                print_red(f'{self.name} last play resulted in {p}')
+                print_red(f'{self.offense.name} last play resulted in {p}')
                 if self.offense.call_time_out(self.state, res) == "yes": 
                     attempt = True
                     self.state.time_outs[self.state.offense] -=1
