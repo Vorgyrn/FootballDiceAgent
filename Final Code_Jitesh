@@ -1,0 +1,439 @@
+from __future__ import annotations
+
+from collections import defaultdict, Counter
+from collections.abc import Callable
+from dataclasses import dataclass, replace
+from itertools import product
+import math
+from typing import Any, Dict, List, Optional, Tuple
+
+
+# --- 1. 2D6 DICE PROBABILITY & PREPROCESSED EPA GRID ---
+
+DICE_SUMS: List[List[int]] = [
+    [first + second for second in range(1, 7)]
+    for first in range(1, 7)
+]
+
+DICE_PROBABILITIES: List[List[float]] = [
+    [1.0 / 36.0 for _ in range(6)]
+    for _ in range(6)
+]
+
+
+def preprocess_2d6_rolls(
+    state: Any,
+    resolve_pair: Callable[[Any, int, int], Tuple[Any, float]],
+    expected_points: Callable[[Any], float],
+) -> List[List[Dict[str, Any]]]:
+    """Return grid[first_die-1][second_die-1] of 2D6 chance outcomes."""
+    before = expected_points(state)
+    grid: List[List[Dict[str, Any]]] = []
+    for d1 in range(1, 7):
+        row: List[Dict[str, Any]] = []
+        for d2 in range(1, 7):
+            next_state, immediate_points = resolve_pair(state, d1, d2)
+            p = DICE_PROBABILITIES[d1 - 1][d2 - 1]
+            epa = immediate_points + expected_points(next_state) - before
+            row.append({
+                "dice": (d1, d2),
+                "sum": d1 + d2,
+                "probability": p,
+                "next_state": next_state,
+                "epa": epa,
+                "weighted_epa": p * epa,
+            })
+        grid.append(row)
+    return grid
+
+
+def expected_epa_from_grid(grid: List[List[Dict[str, Any]]]) -> float:
+    """Total expected EPA across all 36 (d1, d2) cells."""
+    return sum(cell["weighted_epa"] for row in grid for cell in row)
+
+
+def group_by_sum(grid: List[List[Dict[str, Any]]]) -> Dict[int, Dict[str, float]]:
+    """Aggregate the 6x6 grid into the 11 dice sums (2..12)."""
+    result: Dict[int, Dict[str, float]] = defaultdict(
+        lambda: {"probability": 0.0, "weighted_epa": 0.0}
+    )
+    for row in grid:
+        for cell in row:
+            entry = result[cell["sum"]]
+            entry["probability"] += cell["probability"]
+            entry["weighted_epa"] += cell["weighted_epa"]
+    return dict(sorted(result.items()))
+
+
+# --- 2. GAME STATE, ACTIONS & TREE NODES ---
+
+@dataclass(frozen=True)
+class GameState:
+    score_diff: int          # Offense points - Defense points[cite: 5]
+    down: int                # 1 to 4[cite: 5]
+    yard_line: int           # 0 (own goal) to 100 (opponent goal)[cite: 5]
+    yards_to_go: int         # Yards needed for first down[cite: 5]
+    offense_timeouts: int    # Remaining offensive TOs[cite: 4, 5]
+    defense_timeouts: int    # Remaining defensive TOs[cite: 4]
+    blitzes_remaining: int   # Starts at 5 per game[cite: 5]
+    audibles_remaining: int  # Limited offensive resource[cite: 5]
+    possessions_left: int    # Remaining possessions/turns[cite: 5]
+
+    def in_five_yard_lane(self) -> bool:
+        return self.yard_line >= 95
+
+
+@dataclass(frozen=True)
+class OffensiveAction:
+    kind: str  # "FIELD_GOAL", "PUNT", "ROLL_1", "ROLL_2", "ROLL_3", "AUDIBLE_ROLL_1", "AUDIBLE_ROLL_2"
+    white_die_y: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class DefensiveAction:
+    kind: str  # "NONE", "BLITZ_CROSS_OFF", "BLITZ_FORCE_2_FROM_3", "BLITZ_FORCE_3_FROM_1", "DEF_AUDIBLE"
+    crossed_sum: Optional[int] = None
+    white_die_y: Optional[int] = None
+
+
+@dataclass
+class TreeNode:
+    node_type: str  # "MAX", "MIN", "CHANCE", "LEAF"
+    state: GameState
+    value: float = 0.0
+    label: str = ""
+    action: Optional[object] = None
+    children: List["TreeNode"] = None
+    roll_grid: Optional[List[List[Dict[str, Any]]]] = None  # Stores 6x6 grid when 2D6 is used
+
+    def __post_init__(self) -> None:
+        if self.children is None:
+            self.children = []
+
+
+def dice_distribution(
+    num_dice: int,
+    white_die_y: Optional[int] = None,
+    crossed_sum: Optional[int] = None,
+) -> Dict[int, float]:
+    """Fallback probability distribution for 1D6, 3D6, white-die pin, or crossed-off sum[cite: 5]."""
+    if white_die_y is not None and num_dice >= 1:
+        rem = max(0, num_dice - 1)
+        rolls = [(white_die_y,)] if rem == 0 else [
+            (white_die_y, *rest) for rest in product(range(1, 7), repeat=rem)
+        ]
+    else:
+        rolls = list(product(range(1, 7), repeat=num_dice))
+
+    counts = Counter(sum(r) for r in rolls)
+    if crossed_sum is not None and crossed_sum in counts:
+        del counts[crossed_sum]
+        total = sum(counts.values())
+        return {s: c / total for s, c in counts.items()}
+
+    total = sum(counts.values())
+    return {s: c / total for s, c in counts.items()}
+
+
+# --- 3. INTEGRATED EXPECTIMINIMAX AGENT ---
+
+class FootballDiceGameTreeAgent:
+    def __init__(
+        self,
+        resolve_roll: Callable[[GameState, OffensiveAction, DefensiveAction, int], Tuple[GameState, float]],
+        resolve_special: Callable[[GameState, OffensiveAction], Tuple[GameState, float]],
+        expected_points: Callable[[GameState], float],
+        max_depth: int = 2,
+        default_cross_sum: int = 10,
+        default_white_die: int = 4,
+    ) -> None:
+        self.resolve_roll = resolve_roll
+        self.resolve_special = resolve_special
+        self.expected_points = expected_points
+        self.max_depth = max_depth
+        self.default_cross_sum = default_cross_sum
+        self.default_white_die = default_white_die
+
+    def get_offensive_actions(self, state: GameState) -> List[OffensiveAction]:
+        actions: List[OffensiveAction] = [
+            OffensiveAction("ROLL_2"),
+            OffensiveAction("ROLL_3"),
+            OffensiveAction("FIELD_GOAL"),
+            OffensiveAction("PUNT"),
+        ]
+        if state.in_five_yard_lane():
+            actions.append(OffensiveAction("ROLL_1"))
+        if state.audibles_remaining > 0:
+            actions.append(OffensiveAction("AUDIBLE_ROLL_1", white_die_y=self.default_white_die))
+            actions.append(OffensiveAction("AUDIBLE_ROLL_2", white_die_y=self.default_white_die))
+        return actions
+
+    def get_defensive_actions(
+        self, state: GameState, off_action: OffensiveAction
+    ) -> List[DefensiveAction]:
+        if off_action.kind in ("FIELD_GOAL", "PUNT"):
+            return [DefensiveAction("NONE")]
+
+        def_actions: List[DefensiveAction] = [
+            DefensiveAction("NONE"),
+            DefensiveAction("DEF_AUDIBLE", white_die_y=self.default_white_die),
+        ]
+        if state.blitzes_remaining > 0:
+            def_actions.append(
+                DefensiveAction("BLITZ_CROSS_OFF", crossed_sum=self.default_cross_sum)
+            )
+            if off_action.kind == "ROLL_3" and not state.in_five_yard_lane():
+                def_actions.append(DefensiveAction("BLITZ_FORCE_2_FROM_3"))
+            if off_action.kind == "ROLL_1" and state.in_five_yard_lane():
+                def_actions.append(DefensiveAction("BLITZ_FORCE_3_FROM_1"))
+        return def_actions
+
+    def _effective_roll_spec(
+        self,
+        state: GameState,
+        off_action: OffensiveAction,
+        def_action: DefensiveAction,
+        depth: int,
+    ) -> Tuple[int, Optional[int], Optional[int]]:
+        white_die = off_action.white_die_y
+        crossed_sum = def_action.crossed_sum if def_action.kind == "BLITZ_CROSS_OFF" else None
+
+        num_dice_map = {
+            "ROLL_1": 1,
+            "ROLL_2": 2,
+            "ROLL_3": 3,
+            "AUDIBLE_ROLL_1": 1,
+            "AUDIBLE_ROLL_2": 2,
+        }
+        num_dice = num_dice_map.get(off_action.kind, 2)
+
+        if def_action.kind == "BLITZ_FORCE_2_FROM_3":
+            num_dice = 2
+        elif def_action.kind == "BLITZ_FORCE_3_FROM_1":
+            num_dice = 3
+        elif def_action.kind == "DEF_AUDIBLE":
+            white_die = def_action.white_die_y
+            ev_1, _ = self._evaluate_chance_outcomes(
+                state, off_action, def_action, 1, white_die, crossed_sum, depth - 1
+            )
+            ev_2, _ = self._evaluate_chance_outcomes(
+                state, off_action, def_action, 2, white_die, crossed_sum, depth - 1
+            )
+            num_dice = 1 if ev_1 >= ev_2 else 2
+
+        return num_dice, white_die, crossed_sum
+
+    def _apply_pre_roll_resources(
+        self, state: GameState, off_action: OffensiveAction, def_action: DefensiveAction
+    ) -> GameState:
+        audibles = state.audibles_remaining - (
+            1 if off_action.kind in ("AUDIBLE_ROLL_1", "AUDIBLE_ROLL_2") else 0
+        )
+        blitzes = state.blitzes_remaining - (
+            1 if def_action.kind.startswith("BLITZ_") else 0
+        )
+        return replace(
+            state,
+            audibles_remaining=max(0, audibles),
+            blitzes_remaining=max(0, blitzes),
+        )
+
+    def _score_roll_sum(
+        self,
+        state: GameState,
+        off_action: OffensiveAction,
+        def_action: DefensiveAction,
+        roll_sum: int,
+        num_dice: int,
+        white_die: Optional[int],
+        crossed_sum: Optional[int],
+        depth: int,
+        before_ep: float,
+    ) -> float:
+        next_state, imm_pts = self.resolve_roll(state, off_action, def_action, roll_sum)
+        base_epa = imm_pts + self.expected_points(next_state) - before_ep
+
+        if next_state.offense_timeouts > 0 and depth > 0:
+            reroll_state = replace(next_state, offense_timeouts=next_state.offense_timeouts - 1)
+            reroll_ev, _ = self._evaluate_chance_outcomes(
+                reroll_state, off_action, def_action, num_dice, white_die, crossed_sum, depth - 1
+            )
+            return max(base_epa, reroll_ev)
+
+        if depth > 1 and next_state.possessions_left > 0:
+            return base_epa + 0.5 * self.build_tree(next_state, depth=depth - 1).value
+
+        return base_epa
+
+    def _evaluate_chance_outcomes(
+        self,
+        state: GameState,
+        off_action: OffensiveAction,
+        def_action: DefensiveAction,
+        num_dice: int,
+        white_die: Optional[int],
+        crossed_sum: Optional[int],
+        depth: int,
+    ) -> Tuple[float, Optional[List[List[Dict[str, Any]]]]]:
+        """Use preprocess_2d6_rolls when rolling standard unconstrained 2D6; otherwise use dice_distribution."""
+        before_ep = self.expected_points(state)
+
+        # Standard unconstrained 2D6 uses the 6x6 preprocessed grid directly
+        if num_dice == 2 and white_die is None and crossed_sum is None:
+            sum_cache: Dict[int, float] = {}
+
+            def resolve_pair(s: GameState, d1: int, d2: int) -> Tuple[GameState, float]:
+                roll_sum = d1 + d2
+                if roll_sum not in sum_cache:
+                    # Compute full recursive outcome value for this roll_sum
+                    sum_cache[roll_sum] = self._score_roll_sum(
+                        s, off_action, def_action, roll_sum, num_dice, white_die, crossed_sum, depth, before_ep
+                    )
+                # Return a dummy next_state with EP = before_ep + cached_val so grid['epa'] equals cached_val
+                next_s, _ = self.resolve_roll(s, off_action, def_action, roll_sum)
+                return next_s, sum_cache[roll_sum] - (self.expected_points(next_s) - before_ep)
+
+            grid = preprocess_2d6_rolls(state, resolve_pair, self.expected_points)
+            return expected_epa_from_grid(grid), grid
+
+        # 1D6, 3D6, white-die pinned, or blitz crossed-off sum uses dice_distribution
+        dist = dice_distribution(num_dice, white_die_y=white_die, crossed_sum=crossed_sum)
+        ev = sum(
+            prob * self._score_roll_sum(
+                state, off_action, def_action, roll_sum, num_dice, white_die, crossed_sum, depth, before_ep
+            )
+            for roll_sum, prob in dist.items()
+        )
+        return ev, None
+
+    def build_tree(self, state: GameState, depth: Optional[int] = None) -> TreeNode:
+        curr_depth = self.max_depth if depth is None else depth
+
+        if curr_depth <= 0 or state.possessions_left <= 0:
+            return TreeNode(
+                node_type="LEAF",
+                state=state,
+                value=self.expected_points(state),
+                label="Leaf",
+            )
+
+        root = TreeNode(node_type="MAX", state=state, label="Offense Decision")
+        best_off_val = -math.inf
+
+        for off_action in self.get_offensive_actions(state):
+            if off_action.kind in ("FIELD_GOAL", "PUNT"):
+                next_state, imm_pts = self.resolve_special(state, off_action)
+                epa = imm_pts + self.expected_points(next_state) - self.expected_points(state)
+                root.children.append(
+                    TreeNode(
+                        node_type="CHANCE",
+                        state=next_state,
+                        value=epa,
+                        label=f"Special: {off_action.kind}",
+                        action=off_action,
+                    )
+                )
+                best_off_val = max(best_off_val, epa)
+                continue
+
+            min_node = TreeNode(
+                node_type="MIN",
+                state=state,
+                label=f"Defense vs {off_action.kind}",
+                action=off_action,
+            )
+            min_val = math.inf
+
+            for def_action in self.get_defensive_actions(state, off_action):
+                updated_state = self._apply_pre_roll_resources(state, off_action, def_action)
+                num_dice, white_die, crossed_sum = self._effective_roll_spec(
+                    updated_state, off_action, def_action, curr_depth
+                )
+                chance_val, grid = self._evaluate_chance_outcomes(
+                    updated_state,
+                    off_action,
+                    def_action,
+                    num_dice,
+                    white_die,
+                    crossed_sum,
+                    depth=curr_depth,
+                )
+                min_node.children.append(
+                    TreeNode(
+                        node_type="CHANCE",
+                        state=updated_state,
+                        value=chance_val,
+                        label=f"Def: {def_action.kind} ({num_dice}d)",
+                        action=def_action,
+                        roll_grid=grid,
+                    )
+                )
+                min_val = min(min_val, chance_val)
+
+            min_node.value = min_val
+            root.children.append(min_node)
+            best_off_val = max(best_off_val, min_val)
+
+        root.value = best_off_val if best_off_val != -math.inf else 0.0
+        return root
+
+    def choose_best_action(self, state: GameState) -> Tuple[Optional[OffensiveAction], TreeNode]:
+        tree = self.build_tree(state)
+        best_child: Optional[TreeNode] = None
+        for child in tree.children:
+            if best_child is None or child.value > best_child.value:
+                best_child = child
+        return (best_child.action if best_child else None), tree
+
+
+# --- 4. QUICK SMOKE TEST ---
+
+if __name__ == "__main__":
+    def demo_ep(s: GameState) -> float:
+        return (s.yard_line / 100.0) * 5.0 - (s.down - 1) * 0.35
+
+    def demo_resolve_roll(
+        s: GameState, off: OffensiveAction, defn: DefensiveAction, roll_sum: int
+    ) -> Tuple[GameState, float]:
+        gain = max(-5, roll_sum - 6)
+        new_yard = min(100, max(0, s.yard_line + gain))
+        pts = 6.0 if new_yard >= 100 else 0.0
+        if gain >= s.yards_to_go:
+            next_down, next_ytg = 1, min(10, 100 - new_yard)
+        else:
+            next_down, next_ytg = s.down + 1, max(1, s.yards_to_go - gain)
+
+        if next_down > 4 and pts == 0.0:
+            opp_state = replace(
+                s, down=1, yard_line=100 - new_yard, yards_to_go=10,
+                possessions_left=max(0, s.possessions_left - 1),
+            )
+            return opp_state, -demo_ep(opp_state)
+
+        return replace(s, down=next_down, yard_line=new_yard, yards_to_go=next_ytg), pts
+
+    def demo_resolve_special(s: GameState, off: OffensiveAction) -> Tuple[GameState, float]:
+        if off.kind == "FIELD_GOAL":
+            prob = 0.75 if s.yard_line >= 65 else 0.35
+            opp_state = replace(s, down=1, yard_line=80, yards_to_go=10, possessions_left=max(0, s.possessions_left - 1))
+            return opp_state, (prob * 3.0) - demo_ep(opp_state)
+        opp_state = replace(s, down=1, yard_line=max(20, 100 - (s.yard_line + 35)), yards_to_go=10, possessions_left=max(0, s.possessions_left - 1))
+        return opp_state, -demo_ep(opp_state)
+
+    test_state = GameState(
+        score_diff=0, down=2, yard_line=55, yards_to_go=6,
+        offense_timeouts=2, defense_timeouts=2,
+        blitzes_remaining=5, audibles_remaining=1, possessions_left=4,
+    )
+    agent = FootballDiceGameTreeAgent(demo_resolve_roll, demo_resolve_special, demo_ep, max_depth=2)
+    best_action, tree = agent.choose_best_action(test_state)
+    print("Best action:", best_action, "| Root EV:", round(tree.value, 4))
+
+    # Inspect the 6x6 grid stored on the ROLL_2 -> NONE chance node
+    for child in tree.children:
+        if child.action == OffensiveAction("ROLL_2"):
+            for grand_child in child.children:
+                if grand_child.action == DefensiveAction("NONE") and grand_child.roll_grid:
+                    print("6x6 grid sum(epa) matches chance value:",
+                          round(expected_epa_from_grid(grand_child.roll_grid), 4) == round(grand_child.value, 4))
+                    print("Grouped by sum=7:", group_by_sum(grand_child.roll_grid)[7])
