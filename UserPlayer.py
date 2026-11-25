@@ -36,8 +36,6 @@ class UserPlayer(Player):
     def call_time_out(self, state, yards=0):
         # determine actions for the given game state
         ops = ["yes", "no"]
-        if yards == -100: yards = "turnover"
-        print_red(f'{self.name} last play resulted in {yards}')
         print(f"Take a timout to redo play?")
         i = 1
         for play in ops:
@@ -48,7 +46,15 @@ class UserPlayer(Player):
     
     def call_audible(self, state):
         # determine actions for the given game state
-        raise NotImplementedError
+        ops = range(1,7)
+        print(f"Select a row for the play to come from:")
+        i = 1
+        for play in ops:
+            print(f'\t{i}. {play}')
+            i += 1
+        # +1 becuase validate does -1 to normalize for 0 
+        #   base but this index is 1 based
+        return validate_input(len(ops))+1
     
     def call_blitz(self, state):
         # determine actions for the given game state

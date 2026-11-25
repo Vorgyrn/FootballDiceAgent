@@ -104,7 +104,9 @@ class ResultsGrid:
 
     def setTempValue(self, row,col,val):
         self.useTempGrid = True
-        
+    
+    def getPlayRow(self, row):
+        return self.plays.loc[row]        
 
 if __name__ == "__main__":
     resGrid = ResultsGrid()

@@ -15,16 +15,19 @@ def roll_1_d6():
     return roll_n_d6(1)
 
 
-
+# use when something bad happens to off
 def print_red(text):
     print(f"\033[31m{text}\033[0m")
 
+# use when something good happens to off
 def print_green(text):
     print(f"\033[32m{text}\033[0m")
 
+# used for game state info
 def print_blue(text):
     print(f"\033[34m{text}\033[0m")
 
+#  use for play info
 def print_yellow(text):
     print(f"\033[33m{text}\033[0m")
 
