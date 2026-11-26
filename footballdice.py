@@ -67,8 +67,10 @@ class GameState:
         print(f'Blitzes  | {self.blitzes[0]} | {self.blitzes[1]} |')
         print(f'Drives Remaining: {self.drives_remaining}')
 
-        if self.down == 4: print_red(f'DOWN: {self.down}')
-        else: print_blue(f'DOWN: {self.down}')
+        if self.down == 1: print_blue(f'DOWN: {self.down}')
+        elif self.down == 2: print_green(f'DOWN: {self.down}')
+        elif self.down == 3: print_yellow(f'DOWN: {self.down}')
+        else: print_red(f'DOWN: {self.down}')
         print_blue(f'Yards to First Down: {self.ytfd}')
         print_blue(f'Yards to End Zone: {self.yttd}')
 
@@ -146,8 +148,7 @@ class FootballDice:
             actions.append("Roll 1 dice (special scoring action)")
         if self.state.yttd < 47:
             actions.append("Attempt field goal (special scoring action)")
-        if self.state.audibles[self.offense.role] > 0 and \
-            self.state.def_play_call != "Audible":
+        if self.state.audibles[self.offense.role] > 0:
             actions.append("Audible")
         if self.state.down == 4:
             actions.append('Short Punt (1 dice)')
@@ -158,11 +159,19 @@ class FootballDice:
     def determine_def_plays(self):
         # determine defensive actions for the given game state
         actions = ['None']
-        if self.state.audibles[self.defense.role] > 0:
+        if self.state.audibles[self.defense.role] > 0 and \
+            "Roll" in self.state.off_play_call:
             actions.append("Audible")
         if self.state.blitzes[self.defense.role] > 0:
-            actions.append("Dice Change Blitz")
+            # the defense can cross out a number from any result chart (kick,fg,play)
             actions.append("Cross Out Blitz")
+            if "Roll" in self.state.off_play_call:
+                # can only use this if the offense is using a normal play
+                if "2" not in self.state.off_play_call:
+                    actions.append("2 Dice Blitz")
+                if "3" not in self.state.off_play_call:
+                    actions.append("3 Dice Blitz")
+            
 
         self.state.defense_plays = actions
     
@@ -171,14 +180,14 @@ class FootballDice:
                 (self.state.scores[0] == self.state.scores[1]):
             
             self.state.reset_play_calls()
-            # def play call and resolution
-            self.def_call_play()
-            self.resolve_def_pre_play_actions()
-
             # off play call and resolution
             self.determine_off_plays()
             self.off_call_play()
             self.resolve_off_pre_play_actions()
+            
+            # def play call and resolution
+            self.def_call_play()
+            self.resolve_def_pre_play_actions()
 
             # run play and update game state
             self.play_down()         
@@ -221,6 +230,9 @@ class FootballDice:
         dp = self.state.def_play_call
         # all defensive actions are pre play so anything other than none requires handling
         if dp == "Audible":
+            if self.state.aud_row is not None:
+                print_red(f"{self.defense} is overriding the audible called by {self.offense}")
+                self.state.audibles[self.offense.role] += 1
             # set game state varaible to set def blitz row (replace first dice roll in offense play)
             self.state.aud_row = self.defense.call_audible(self.state)
             self.state.audibles[self.defense.role] -= 1
@@ -228,8 +240,14 @@ class FootballDice:
             print("Options:")
             print(self.playResults.getPlayRow(self.state.aud_row).to_list())
             
-        elif dp == 'Dice Change Blitz':
-
+        elif dp == '2 Dice Blitz':
+            print_yellow(f"Defense is forcing the offense to roll 2 dice")
+            self.state.off_play_call = "Roll 2 dice"
+            self.state.blitzes[self.offense.role] -= 1
+            
+        elif dp == '3 Dice Blitz':
+            print_yellow(f"Defense is forcing the offense to roll 3 dice")
+            self.state.off_play_call = "Roll 3 dice"
             self.state.blitzes[self.offense.role] -= 1
             
         elif dp == 'Cross Out Blitz':
@@ -246,7 +264,7 @@ class FootballDice:
             print(self.playResults.getPlayRow(self.state.aud_row).to_list())
             
             # call actual play
-            print( self.OFF_BASE_PLAYS)
+            print(self.OFF_BASE_PLAYS)
             self.state.offense_plays = self.OFF_BASE_PLAYS
             print(self.state.offense_plays)
             self.off_call_play() 
@@ -325,6 +343,7 @@ class FootballDice:
                 if res > self.state.yttd or ((self.state.yttd - res) > 99): 
                     print_red('NO GAIN!')
                     res = 0
+                elif res <= 0: print_red(f'{res} yard gain')
                 else: print_green(f'{res} yard gain')
                                 
                 # check for turn over on downs
@@ -355,7 +374,7 @@ class FootballDice:
                 new_pos=80
                 self.change_possesion(new_pos)
             else: 
-                print(f'{self.offense} punted the ball {res} yards')
+                print_yellow(f'{self.offense} punted the ball {res} yards')
                 self.doKickReturn(100 - new_pos)
                 
         elif "goal" in play:
@@ -396,7 +415,7 @@ class FootballDice:
             dist = self.playResults.getPuntResult(roll)
             if dist >= start:
                 print_red("Touchback, the ball will be place at the 20")
-                start = 20
+                start = 80
                 self.change_possesion(start)
             else: 
                 start = 100-(start-dist)
