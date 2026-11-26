@@ -18,7 +18,7 @@ class Player:
     def call_audible(self, state):
         # determine actions for the given game state
         raise NotImplementedError
-    def call_blitz(self, state):
+    def call_blitz(self, state, table):
         # determine actions for the given game state
         raise NotImplementedError
     def __repr__(self):
@@ -56,9 +56,13 @@ class UserPlayer(Player):
         #   base but this index is 1 based
         return validate_input(len(ops))+1
     
-    def call_blitz(self, state):
+    def call_blitz(self, state, table):
         # determine actions for the given game state
-        raise NotImplementedError
+        print("Select row of cell to remove for the play:")
+        row = validate_input(len(table.index))+1
+        print("Select column of cell to remove for the play:")
+        col = validate_input(len(table.columns))+1
+        return [row, col]
 
 class AgentPlayer(Player):
     def __init__(self, name="Agent", role=1):

@@ -90,6 +90,7 @@ class GameState:
 
         self.aud_row = None
         self.def_blitz = None
+        
 class FootballDice:
     # game manager
     PRE_PLAY_ACTIONS_OFF = ['Audible']
@@ -251,8 +252,34 @@ class FootballDice:
             self.state.blitzes[self.offense.role] -= 1
             
         elif dp == 'Cross Out Blitz':
+            op = self.state.off_play_call
             
+            grid = None
+            if op == "Roll 1 dice (special scoring action)":
+                grid = self.playResults.get1DiceGrid()
+                
+            elif op =='Roll 2 dice':
+                grid = self.playResults.get2DiceGrid()
+                
+            elif op == 'Roll 3 dice':
+                grid = self.playResults.get3DiceGrid()
+                
+            elif op == "Attempt field goal (special scoring action)":
+                grid = self.playResults.getFGGrid()
+            
+            elif "Short" in op:
+                grid = self.playResults.getShortKickGrid()
+
+            elif "Long" in op:
+                grid = self.playResults.getLongKickGrid()
+
+            print_yellow("Options to cross out:")
+            print(grid.to_string())
+        
+            self.state.def_blitz = self.defense.call_blitz(self.state, grid)
             self.state.blitzes[self.offense.role] -= 1
+            print_red(f'Defense is blocking results from {self.state.def_blitz}')
+            
 
     def resolve_off_pre_play_actions(self):
         # only pre play action for offense is audible
@@ -283,27 +310,58 @@ class FootballDice:
                 roll[0] = self.state.aud_row
             
             if play == "Roll 1 dice (special scoring action)":
+                if self.state.def_blitz and self.state.def_blitz[0] == roll[0]:
+                    print_red("Rolled disabled cell, reroll!")
+                    attempt = True
+                    continue
+                
                 roll = roll[:1]
                 print(f'Offense rolled {roll}')
                 res = self.playResults.getPlayResult(roll)
                 print_yellow(f'')
                 
             elif play =='Roll 2 dice':
+                if self.state.def_blitz and self.state.def_blitz == roll:
+                    print_red("Rolled disabled cell, reroll!")
+                    attempt = True
+                    continue
                 roll = roll[:2]
                 print(f'Offense rolled {roll}')
                 res = self.playResults.getPlayResult(roll)
                 
             elif play == 'Roll 3 dice':
+                r = [roll[0], roll[1]+roll[2]]
+                if self.state.def_blitz and self.state.def_blitz == r:
+                    print_red("Rolled disabled cell, reroll!")
+                    attempt = True
+                    continue
                 print(f'Offense rolled {roll}')
                 res = self.playResults.getPlayResult(roll)
                 
             elif play == "Attempt field goal (special scoring action)":
+                cols = self.playResults.getFGCols()
+                c = cols[-1]
+                if self.state.yttd <= cols[0]: c = cols[0]
+                elif self.state.yttd <= cols[1]: c = cols[1]
+                r = [roll[0],c]
+                if self.state.def_blitz and self.state.def_blitz == r:
+                        print_red("Rolled disabled cell, reroll!")
+                        attempt = True
+                        continue
                 roll = roll[:1]
                 print(f'Offense rolled {roll}!')
                 res = self.playResults.getFieldGoalResult(roll, self.state.yttd)
             elif "Punt" in play:
-                if "Short" in play: roll = roll[:1]
+                r = [sum(roll)]
+                if "Short" in play: 
+                    roll = roll[:1]
+                    r = roll
                 else: roll = roll[:2]
+                
+                if self.state.def_blitz and self.state.def_blitz[0] == roll:
+                    print_red("Rolled disabled cell, reroll!")
+                    attempt = True
+                    continue
                 
                 print(f'Offense rolled {roll}!')
                 res = self.playResults.getPuntResult(roll)

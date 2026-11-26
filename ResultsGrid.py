@@ -17,8 +17,6 @@ class ResultsGrid:
         self.punt = pd.read_csv(punt).rename(columns=int).astype(int)
         self.punt.index += 1
 
-        self.useTempGrid = False
-
     # play result functions
     def getPlayResult(self, roll:list):
         # determines the result of an offensive play
@@ -95,18 +93,36 @@ class ResultsGrid:
             dist = self.field_goals.columns[2]
         return bool(self.field_goals.at[roll[0], dist])
 
+    def getFGCols(self):
+        return self.field_goals.columns
+    
     def get2PointResult(self, roll:list):
         # check if the 2 point conversion attempt was good
         # input: roll       list of dice rolls, the first value in the list is always used here
         # return:           True if successfull, False otherwise
         d1 = roll[0]
         return (d1 % 2) == 0
-
-    def setTempValue(self, row,col,val):
-        self.useTempGrid = True
     
     def getPlayRow(self, row):
-        return self.plays.loc[row]        
+        return self.plays.loc[row]      
+    
+    def get1DiceGrid(self):
+        return self.plays.iloc[:, :1]
+    
+    def get2DiceGrid(self):
+        return self.plays.iloc[:, :6]
+
+    def get3DiceGrid(self):
+        return self.plays
+
+    def getFGGrid(self):
+        return self.field_goals
+
+    def getShortKickGrid(self):
+        return self.punt.iloc[:, :6]
+
+    def getLongKickGrid(self):
+            return self.punt
 
 if __name__ == "__main__":
     resGrid = ResultsGrid()
@@ -114,6 +130,7 @@ if __name__ == "__main__":
     print(resGrid.getFieldGoalResult([1,2], 43))
     print(resGrid.getPlayResult([6,5,4]))
     print(resGrid.getPuntResult([2, 6]))
+    resGrid.getFGGrid()
     
     
     
